@@ -18,6 +18,7 @@ Export-Package: nl.finalist.liferay.oidc,nl.finalist.liferay.oidc.configuration
   @jackson-annotations-*.jar,\
   @jackson-core-*.jar,\
   @jackson-databind-*.jar,\
-  @commons-lang3-*.jar
+  @commons-lang3-*.jar, \
+  @jjwt-*.jar
 
 Import-Package: !android.*,!org.bouncycastle.*, *
