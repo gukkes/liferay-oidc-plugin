@@ -19,3 +19,5 @@ Export-Package: nl.finalist.liferay.oidc,nl.finalist.liferay.oidc.configuration
   @jackson-core-*.jar,\
   @jackson-databind-*.jar,\
   @commons-lang3-*.jar
+
+Import-Package: !android.*,!org.bouncycastle.*, *

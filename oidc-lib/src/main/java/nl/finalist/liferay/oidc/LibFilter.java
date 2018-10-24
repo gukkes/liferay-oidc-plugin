@@ -4,15 +4,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.security.Key;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.RSAPrivateKeySpec;
+import java.util.*;
 
 import javax.servlet.FilterChain;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.impl.Base64UrlCodec;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.oltu.oauth2.client.OAuthClient;
@@ -28,6 +36,10 @@ import org.apache.oltu.oauth2.common.message.types.GrantType;
 /**
  * Servlet filter that initiates OpenID Connect logins, and handles the resulting flow, until and including the
  * UserInfo request. It saves the UserInfo in a session attribute, to be examined by an AutoLogin.
+ *
+ * This class is adapted for ITSME integration.
+ *
+ * @author Gunther Verhemeldonck, Gfi nv
  */
 public class LibFilter  {
 
@@ -139,7 +151,6 @@ public class LibFilter  {
         OIDCConfiguration oidcConfiguration = liferay.getOIDCConfiguration(liferay.getCompanyId(request));
 
         try {
-            String codeParam = request.getParameter(REQ_PARAM_CODE);
             String stateParam = request.getParameter(REQ_PARAM_STATE);
 
             String expectedState = generateStateParam(request);
@@ -149,13 +160,7 @@ public class LibFilter  {
                 throw new IOException("Invalid state parameter");
             }
 
-            OAuthClientRequest tokenRequest = OAuthClientRequest.tokenLocation(oidcConfiguration.tokenLocation())
-                    .setGrantType(GrantType.AUTHORIZATION_CODE)
-                    .setClientId(oidcConfiguration.clientId())
-                    .setClientSecret(oidcConfiguration.secret())
-                    .setCode(codeParam)
-                    .setRedirectURI(getRedirectUri(request))
-                    .buildBodyMessage();
+            OAuthClientRequest tokenRequest = buildClientRequest(request, oidcConfiguration);
             liferay.debug("Token request to uri: " + tokenRequest.getLocationUri());
 
             OAuthClient oAuthClient = new OAuthClient(new URLConnectionClient());
@@ -184,6 +189,46 @@ public class LibFilter  {
         } catch (OAuthSystemException | OAuthProblemException e) {
             throw new IOException("While exchanging code for access token and retrieving user info", e);
         }
+    }
+
+    protected OAuthClientRequest buildClientRequest(HttpServletRequest request, OIDCConfiguration oidcConfiguration) throws OAuthSystemException {
+        liferay.debug("Constructing itsme OAuthClientRequest instance...");
+        try {
+            return OAuthClientRequest.tokenLocation(oidcConfiguration.tokenLocation())
+                    .setGrantType(GrantType.AUTHORIZATION_CODE)
+                    .setCode(request.getParameter(REQ_PARAM_CODE))
+                    .setRedirectURI(getRedirectUri(request))
+                    .setAssertion(constructPrivateKeyJWT(oidcConfiguration.clientId(), oidcConfiguration.tokenLocation())) //GFI | Itsme Customized
+                    .setAssertionType("urn:ietf:params:oauth:client-assertion-type:jwt-bearer") //GFI | Itsme Customized
+                    .buildBodyMessage();
+        } catch (Exception e) {
+            throw new OAuthSystemException("Failed to sign JWT", e);
+        }
+    }
+
+    //GFI | Itsme Custom
+    protected String constructPrivateKeyJWT(String clientId, String tokenEndPoint) throws UnsupportedEncodingException, NoSuchAlgorithmException, InvalidKeySpecException {
+        liferay.debug("Constructing and signing itsme client_assertion JWT ...");
+        final String jit = UUID.randomUUID().toString();
+        final Calendar now = Calendar.getInstance();
+        now.add(Calendar.MINUTE, 3);
+        final Date expirationDate = now.getTime();
+
+
+        BigInteger modulus = new BigInteger(1, Base64UrlCodec.BASE64URL.decode("pJADu0nyhCrh9XIRTO42V6YQqAeNABGGo006hknHw86wYByjHMhpYYwHuxuyx44mO8iQIcJkh5NPlkcaDN90RH0JOxyEE1pES5C3LqntC0mAP6BWoqMhY8g4PT2EJyPjVYZcpaZw0VUp6E5kx847dbvhMe8KWy0geuCwrCgXVhWDRoIyV7r2k948zlmRJjbdjkNosYEFI43nicZ_jckTbs_8nzlxDQo8GtstdhR_oUbXyyBJM66SUA8KxWV6NG0zubNIYWxHIwlU938gdpTNfUMKm78f78iPyfuoPz2dTb6Z7OP7WZb06eRv41i_dS0Zh-sKKHrpUYXRf6VrOoU96w"));
+        BigInteger exponent = new BigInteger(1, Base64UrlCodec.BASE64URL.decode("AQAB"));
+        Key key = KeyFactory.getInstance("RSA").generatePrivate(new RSAPrivateKeySpec(modulus, exponent));
+
+        String jwt = Jwts.builder()
+                .setIssuer(clientId)
+                .setSubject(clientId)
+                .setAudience(tokenEndPoint)
+                .setId(jit)
+                .setExpiration(expirationDate)
+                .signWith(SignatureAlgorithm.RS256, key).compact();
+
+        liferay.debug(jwt);
+        return jwt;
     }
 
     protected void redirectToLogin(HttpServletRequest request, HttpServletResponse response, String clientId) throws

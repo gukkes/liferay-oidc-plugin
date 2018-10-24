@@ -150,7 +150,7 @@
 	 </licenses>
 
     <modules>
-        <module>oidc-hook</module>
+        <!--<module>oidc-hook</module>-->
         <module>oidc-lib</module>
         <module>dxp-oidc-filter</module>
         <module>dxp-oidc-portalsettings-web</module>
