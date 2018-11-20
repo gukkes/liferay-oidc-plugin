@@ -44,21 +44,6 @@ public interface OpenIDConnectOCDConfiguration extends OIDCConfiguration {
     String profileUri();
 
     @Meta.AD(
-        required = false
-    )
-    String ssoLogoutUri();
-
-    @Meta.AD(
-        required = false
-    )
-    String ssoLogoutParam();
-
-    @Meta.AD(
-        required = false
-    )
-    String ssoLogoutValue();
-
-    @Meta.AD(
         required = true
     )
     String issuer();
@@ -69,14 +54,14 @@ public interface OpenIDConnectOCDConfiguration extends OIDCConfiguration {
     String clientId();
 
     @Meta.AD(
-        required = true
+        required = false
     )
     String secret();
 
     @Meta.AD(
         required = true,
 
-        deflt = "openid profile email"
+        deflt = "openid profile email service:GFI_LOGIN"
     )
     String scope();
 
@@ -87,5 +72,30 @@ public interface OpenIDConnectOCDConfiguration extends OIDCConfiguration {
         deflt = "generic"
     )
     String providerType();
+
+    @Meta.AD(
+            required = true
+    )
+    String privateJwkSetEndPoint();
+
+    @Meta.AD(
+            required = true
+    )
+    String publicJwkSetEndPoint();
+
+    @Meta.AD(
+            required = false
+    )
+    String ssoLogoutUri();
+
+    @Meta.AD(
+            required = false
+    )
+    String ssoLogoutParam();
+
+    @Meta.AD(
+            required = false
+    )
+    String ssoLogoutValue();
 
 }

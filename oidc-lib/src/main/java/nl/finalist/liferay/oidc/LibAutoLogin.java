@@ -51,6 +51,10 @@ public class LibAutoLogin {
             	 String emailAddress = provider.getEmail(userInfo);
                  String givenName = provider.getFirstName(userInfo);
                  String familyName = provider.getLastName(userInfo);
+                 //String gender = provider.getGender(userInfo);
+                 //String subject = provider.getSubject(userInfo);
+                 //String locale = provider.getLocale(userInfo);
+                 //String birthdate = provider.getBirthdate(userInfo);
 
                  String userId = liferay.createOrUpdateUser(companyId, emailAddress, givenName, familyName);
                  liferay.trace("Returning credentials for userId " + userId + ", email: " + emailAddress);

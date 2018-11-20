@@ -21,6 +21,8 @@
     String secret = oidcConfiguration.secret();
     String scope = oidcConfiguration.scope();
     String providerType = oidcConfiguration.providerType();
+    String privateJwkSetEndpoint = oidcConfiguration.privateJwkSetEndPoint();
+    String publicJwkSetEndpoint = oidcConfiguration.publicJwkSetEndPoint();
 %>
 
 <aui:fieldset>
@@ -30,6 +32,8 @@
     <aui:input cssClass="lfr-input-text-container" label="authorizationLocation" name='<%= ns + "authorizationLocation" %>' type="text" value="<%= authorizationLocation %>" />
     <aui:input cssClass="lfr-input-text-container" label="tokenLocation" name='<%= ns + "tokenLocation" %>' type="text" value="<%= tokenLocation %>" />
     <aui:input cssClass="lfr-input-text-container" label="profileUri" name='<%= ns + "profileUri" %>' type="text" value="<%= profileUri %>" />
+    <aui:input cssClass="lfr-input-text-container" label="privateJwkSetEndpoint" name='<%= ns + "privateJwkSetEndpoint" %>' type="text" value="<%= privateJwkSetEndpoint %>" />
+    <aui:input cssClass="lfr-input-text-container" label="publicJwkSetEndpoint" name='<%= ns + "publicJwkSetEndpoint" %>' type="text" value="<%= publicJwkSetEndpoint %>" />
     <aui:input cssClass="lfr-input-text-container" label="issuer" name='<%= ns + "issuer" %>' type="text" value="<%= issuer %>"  helpMessage="issuer-helpMessage"/>
     <aui:input cssClass="lfr-input-text-container" label="scope" name='<%= ns + "scope" %>' type="text" value="<%= scope %>" helpMessage="scope-helpMessage"/>
     <aui:input cssClass="lfr-input-text-container" label="clientId" name='<%= ns + "clientId" %>' type="text" value="<%= clientId %>" />

@@ -18,7 +18,18 @@ Export-Package: nl.finalist.liferay.oidc,nl.finalist.liferay.oidc.configuration
   @jackson-annotations-*.jar,\
   @jackson-core-*.jar,\
   @jackson-databind-*.jar,\
-  @commons-lang3-*.jar, \
-  @jjwt-*.jar
+  @commons-lang3-*.jar,\
+  @commons-io-*.jar,\
+  @httpclient-*.jar,\
+  @httpcore-*.jar,\
+  @commons-codec-*.jar,\
+  @oauth2-oidc-sdk-*.jar,\
+  @nimbus-jose-jwt-*.jar,\
+  @lang-tag-*.jar,\
+  @json-smart-*.jar,\
+  @asm-*.jar,\
+  @jcip-annotations-*.jar
 
-Import-Package: !android.*,!org.bouncycastle.*, *
+Import-Package: !android.*,!org.bouncycastle.*, !javax.json.*, !com.google.crypto.tink.subtle.*, !javax.mail.internet.*,\
+    !net.shibboleth.utilities.java.support.xml.*, !org.cryptomator.siv.*, !org.joda.time.*,\
+    !org.opensaml.*, *
