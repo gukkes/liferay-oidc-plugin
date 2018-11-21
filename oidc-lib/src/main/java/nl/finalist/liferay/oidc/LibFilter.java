@@ -44,6 +44,8 @@ import java.util.*;
 /**
  * Servlet filter that initiates OpenID Connect logins, and handles the resulting flow, until and including the
  * UserInfo request. It saves the UserInfo in a session attribute, to be examined by an AutoLogin.
+ *
+ * @author Gunther Verhemeldonck, GFI Belux
  */
 public class LibFilter {
 
@@ -100,7 +102,7 @@ public class LibFilter {
 
         // If the plugin is not enabled, short circuit immediately
         if (!oidcConfiguration.isEnabled()) {
-            liferay.trace("OpenIDConnectFilter not enabled for this virtual instance. Will skip it.");
+            liferay.trace("OpenIDConnectFilter not enabled. Will skip it.");
             return FilterResult.CONTINUE_CHAIN;
         }
 
@@ -147,11 +149,40 @@ public class LibFilter {
         }
         // continue chain
         return FilterResult.CONTINUE_CHAIN;
-
     }
 
-    private void exchangeCodeForAccessToken(HttpServletRequest request) throws IOException {
+    // STEP 1
+    private void redirectToLogin(HttpServletRequest request, HttpServletResponse response, String clientId) throws
+            IOException {
         OIDCConfiguration oidcConfiguration = liferay.getOIDCConfiguration(liferay.getCompanyId(request));
+
+        try {
+            //TODO: see https://belgianmobileid.github.io/slate/login.html#3-2-forging-an-authentication-request
+            //TODO: no support for NONCE in the OLTU api, while being suggested by Itsme !!
+            liferay.trace("SCOPE: " + oidcConfiguration.scope());
+            OAuthClientRequest oAuthRequest = OAuthClientRequest
+                    .authorizationLocation(oidcConfiguration.authorizationLocation())
+                    .setClientId(clientId)
+                    .setRedirectURI(getRedirectUri(request))
+                    .setResponseType("code")
+                    .setScope(oidcConfiguration.scope())
+                    .setState(generateStateParam(request))
+                    .buildQueryMessage();
+            liferay.debug("Redirecting to URL: " + oAuthRequest.getLocationUri());
+            response.sendRedirect(oAuthRequest.getLocationUri());
+        } catch (OAuthSystemException e) {
+            throw new IOException("While redirecting to OP for SSO login", e);
+        }
+    }
+
+    // STEP 2
+    private void exchangeCodeForAccessToken(HttpServletRequest request) throws IOException, ParseException {
+        OIDCConfiguration config = liferay.getOIDCConfiguration(liferay.getCompanyId(request));
+
+        // Load key configuration
+        JWKSet privateJwkSet = JWKSet.load(new URL(config.privateJwkSetEndPoint()));
+        JWKSet publicJwkSet = JWKSet.load(new URL(config.publicJwkSetEndPoint()));
+
         try {
             String stateParam = request.getParameter(REQ_PARAM_STATE);
 
@@ -162,23 +193,20 @@ public class LibFilter {
                 throw new IOException("Invalid state parameter");
             }
 
-            ItsmeTokenResponse tokenResponse = fetchAuthenticationToken(request, oidcConfiguration);
-            OAuthClient oAuthClient = new OAuthClient(new URLConnectionClient());
+            ItsmeTokenResponse itsmeTokenResponse = fetchAuthenticationToken(request, config, privateJwkSet, publicJwkSet);
 
-            //TODO: implement the checkID method !!
-            if (!tokenResponse.checkId(oidcConfiguration.issuer(), oidcConfiguration.clientId())) {
-                liferay.warn("The token was not valid: " + tokenResponse);
+            if (!itsmeTokenResponse.validIdToken(config.issuer(), config.clientId())) {
+                liferay.warn("The token was not valid: " + itsmeTokenResponse);
                 return;
             }
 
-            // The only API to be enabled (in case of Google) is Google+.
-            OAuthClientRequest userInfoRequest = new OAuthBearerClientRequest(oidcConfiguration.profileUri())
-                    .setAccessToken(tokenResponse.getAccessToken()).buildHeaderMessage();
+            final Map<String, Object> openIDUserInfo = getClaims(itsmeTokenResponse, config, privateJwkSet, publicJwkSet);
+            final String subject = (String) openIDUserInfo.get("sub");
+            if (!itsmeTokenResponse.matchingSubjects(subject)){
+                liferay.error("Invalid subject in userInfo response [" + subject + "]!");
+                return;
+            }
 
-            final OAuthResourceResponse userInfoResponse =
-                    oAuthClient.resource(userInfoRequest, OAuth.HttpMethod.GET, OAuthResourceResponse.class);
-
-            final Map<String, Object> openIDUserInfo = getClaims(oidcConfiguration, userInfoResponse);
             request.getSession().setAttribute(OPENID_CONNECT_SESSION_ATTR, openIDUserInfo);
 
         } catch (OAuthSystemException | OAuthProblemException e) {
@@ -188,27 +216,8 @@ public class LibFilter {
         }
     }
 
-    private Map<String, Object> getClaims(OIDCConfiguration oidcConfiguration, OAuthResourceResponse userInfoResponse) throws IOException, ParseException, JOSEException {
-        JWKSet privateJwkSet = JWKSet.load(new URL(oidcConfiguration.privateJwkSetEndPoint()));
-        JWKSet publicJwkSet = JWKSet.load(new URL(oidcConfiguration.publicJwkSetEndPoint()));
-        RSAKey decryptKey = (RSAKey) privateJwkSet.getKeyByKeyId("e1");
-        RSAKey verifyKey = (RSAKey) publicJwkSet.getKeyByKeyId("s1");
-        JWEObject jweObject = JWEObject.parse(userInfoResponse.getBody());
-        jweObject.decrypt(new RSADecrypter(decryptKey));
-        SignedJWT signedJWT = jweObject.getPayload().toSignedJWT();
-        signedJWT.verify(new RSASSAVerifier(verifyKey));
-
-        //for (Map.Entry<String, Object> entry : signedJWT.getJWTClaimsSet().getClaims().entrySet()) {
-        //    liferay.trace("[Claim] " + entry.getKey() + " : " + entry.getValue());
-        //}
-
-        Map openIDUserInfo = new ObjectMapper().readValue(userInfoResponse.getBody(), HashMap.class);
-
-        return openIDUserInfo;
-    }
-
-    private ItsmeTokenResponse fetchAuthenticationToken(HttpServletRequest request, OIDCConfiguration oidcConfiguration)
-            throws IOException, ParseException, JOSEException {
+    private ItsmeTokenResponse fetchAuthenticationToken(HttpServletRequest request, OIDCConfiguration oidcConfiguration,
+                                                        JWKSet priv, JWKSet pub) throws IOException, ParseException, JOSEException {
         try (CloseableHttpClient client = HttpClients.createDefault()) {
             HttpPost httpPost = new HttpPost(oidcConfiguration.tokenLocation());
 
@@ -218,24 +227,26 @@ public class LibFilter {
             params.add(new BasicNameValuePair("code", request.getParameter(REQ_PARAM_CODE)));
             params.add(new BasicNameValuePair("redirect_uri", getRedirectUri(request)));
             params.add(new BasicNameValuePair("client_assertion", constructPrivateKeyJWT(oidcConfiguration.clientId(),
-                    oidcConfiguration.tokenLocation(), oidcConfiguration.privateJwkSetEndPoint())));
+                    oidcConfiguration.tokenLocation(), priv)));
             params.add(new BasicNameValuePair("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"));
 
             httpPost.setEntity(new UrlEncodedFormEntity(params));
 
             CloseableHttpResponse response = client.execute(httpPost);
-            final String jsonresponse = IOUtils.toString(response.getEntity().getContent(), "UTF-8");
-            return mapper.readValue(jsonresponse, ItsmeTokenResponse.class);
+            final String jsonResponse = IOUtils.toString(response.getEntity().getContent(), "UTF-8");
+            ItsmeTokenResponse itsmeTokenResponse = mapper.readValue(jsonResponse, ItsmeTokenResponse.class);
+            itsmeTokenResponse.setIdTokenJwt(decryptToken(itsmeTokenResponse.getIdToken(), oidcConfiguration, priv, pub));
+            itsmeTokenResponse.setLoggingAdapter(liferay);
+            return itsmeTokenResponse;
         }
     }
 
-    private String constructPrivateKeyJWT(String clientId, String tokenEndPoint, String jwksetEndpoint) throws IOException, ParseException, JOSEException {
+    private String constructPrivateKeyJWT(String clientId, String tokenEndPoint, JWKSet jwkSet) throws JOSEException {
         final Calendar now = Calendar.getInstance();
         now.add(Calendar.MINUTE, 3);
         final Date expirationDate = now.getTime();
 
-        JWKSet publicKeys = JWKSet.load(new URL(jwksetEndpoint));
-        RSAKey signKey = (RSAKey) publicKeys.getKeyByKeyId("s1");
+        RSAKey signKey = (RSAKey) jwkSet.getKeyByKeyId("s1");
         JWTClaimsSet jwtClaimsSet = new JWTClaimsSet.Builder()
                 .issuer(clientId)
                 .subject(clientId)
@@ -251,25 +262,37 @@ public class LibFilter {
         return signedToken.serialize();
     }
 
-    private void redirectToLogin(HttpServletRequest request, HttpServletResponse response, String clientId) throws
-            IOException {
-        OIDCConfiguration oidcConfiguration = liferay.getOIDCConfiguration(liferay.getCompanyId(request));
 
-        try {
-            OAuthClientRequest oAuthRequest = OAuthClientRequest
-                    .authorizationLocation(oidcConfiguration.authorizationLocation())
-                    .setClientId(clientId)
-                    .setRedirectURI(getRedirectUri(request))
-                    .setResponseType("code")
-                    .setScope(oidcConfiguration.scope())
-                    .setState(generateStateParam(request))
-                    .buildQueryMessage();
-            liferay.debug("Redirecting to URL: " + oAuthRequest.getLocationUri());
-            response.sendRedirect(oAuthRequest.getLocationUri());
-        } catch (OAuthSystemException e) {
-            throw new IOException("While redirecting to OP for SSO login", e);
+    // STEP 3
+    private Map<String, Object> getClaims(ItsmeTokenResponse tokenResponse, OIDCConfiguration config, JWKSet priv,
+                                          JWKSet pub) throws ParseException, JOSEException, OAuthProblemException, OAuthSystemException {
+
+        OAuthClient oAuthClient = new OAuthClient(new URLConnectionClient());
+        OAuthClientRequest userInfoRequest = new OAuthBearerClientRequest(config.profileUri())
+                .setAccessToken(tokenResponse.getAccessToken()).buildHeaderMessage();
+
+        final OAuthResourceResponse userInfoResponse =
+                oAuthClient.resource(userInfoRequest, OAuth.HttpMethod.GET, OAuthResourceResponse.class);
+        SignedJWT signedJWT = decryptToken(userInfoResponse.getBody(), config, priv, pub);
+        Map<String, Object> openIDUserInfo = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : signedJWT.getJWTClaimsSet().getClaims().entrySet()) {
+            openIDUserInfo.put(entry.getKey(), entry.getValue());
         }
+
+        return openIDUserInfo;
     }
+
+    private SignedJWT decryptToken(final String token, OIDCConfiguration config, JWKSet priv, JWKSet pub) throws ParseException, JOSEException {
+        RSAKey decryptKey = (RSAKey) priv.getKeyByKeyId("e1");
+        RSAKey verifyKey = (RSAKey) pub.getKeyByKeyId("s1");
+        JWEObject jweObject = JWEObject.parse(token);
+        jweObject.decrypt(new RSADecrypter(decryptKey));
+        SignedJWT signedJWT = jweObject.getPayload().toSignedJWT();
+        signedJWT.verify(new RSASSAVerifier(verifyKey));
+        return signedJWT;
+    }
+
 
     protected void redirectToLogout(HttpServletRequest request, HttpServletResponse response,
                                     String logoutUrl, String logoutUrlParamName, String logoutUrlParamValue) throws
@@ -288,6 +311,8 @@ public class LibFilter {
         return completeURL.replaceAll("\\?.*", "");
     }
 
+    // TODO: See https://belgianmobileid.github.io/slate/login.html#3-2-forging-an-authentication-request
+    // TODO: the State param based on just the sessionID might be too simple! (encrypt client id with session Id?)
     protected String generateStateParam(HttpServletRequest request) {
         return DigestUtils.md5Hex(request.getSession().getId());
     }

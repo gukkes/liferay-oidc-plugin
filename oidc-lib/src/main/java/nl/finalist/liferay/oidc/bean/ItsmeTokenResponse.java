@@ -1,8 +1,14 @@
 package nl.finalist.liferay.oidc.bean;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jwt.SignedJWT;
+import nl.finalist.liferay.oidc.LiferayAdapter;
+
+import java.text.ParseException;
+import java.util.Date;
 
 /**
  * Value object.
@@ -10,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * @author Gunther Verhemeldonck, Gfi Belux
  */
 public class ItsmeTokenResponse {
+
     @JsonProperty("access_token")
     private String accessToken;
 
@@ -21,6 +28,12 @@ public class ItsmeTokenResponse {
 
     @JsonProperty("id_token")
     private String idToken;
+
+    @JsonIgnore
+    private SignedJWT idTokenJwt;
+
+    @JsonIgnore
+    private LiferayAdapter liferay;
 
     public String getAccessToken() {
         return accessToken;
@@ -55,23 +68,60 @@ public class ItsmeTokenResponse {
     }
 
 
-    public boolean checkId(String issuer, String clientId) {
-        /*if (idToken.getClaimsSet().getIssuer().equals(issuer)
-                && idToken.getClaimsSet().getAudience().equals(audience)
-                && idToken.getClaimsSet().getExpirationTime() < System
-                .currentTimeMillis()) {
+    public boolean validIdToken(String issuer, String clientId) throws ParseException {
+        if (idTokenJwt == null) {
+            liferay.warn("ID Token not found");
+            return false;
+        }
+
+        if (idTokenJwt.getJWTClaimsSet().getIssuer().equals(issuer) &&
+                idTokenJwt.getJWTClaimsSet().getAudience().contains(clientId) &&
+                idTokenJwt.getJWTClaimsSet().getExpirationTime().after(new Date())) {
             return true;
-        }*/
-        return true; //TODO: implement validity
+        } else {
+            //Important: Print out the forgery fields
+            if (!idTokenJwt.getJWTClaimsSet().getIssuer().equals(issuer)) {
+                liferay.warn("ID Token forgery detected! Invalid issuer [" + issuer + "]");
+            }
+            if (!idTokenJwt.getJWTClaimsSet().getAudience().contains(clientId)) {
+                liferay.warn("ID Token forgery detected! Invalid audience [" + clientId + "]");
+            }
+            if (idTokenJwt.getJWTClaimsSet().getExpirationTime().before(new Date())){
+                liferay.warn("ID Token forgery detected! Token expired.");
+            }
+            return false;
+        }
     }
 
     @Override
-    public String toString(){
+    public String toString() {
         ObjectMapper m = new ObjectMapper();
         try {
             return m.writeValueAsString(this);
         } catch (JsonProcessingException e) {
             return super.toString();
         }
+    }
+
+    public void setIdTokenJwt(SignedJWT jwt) {
+        this.idTokenJwt = jwt;
+    }
+
+    public void setLoggingAdapter(LiferayAdapter liferay) {
+        this.liferay = liferay;
+    }
+
+    private String getSubject() throws ParseException {
+        if (idTokenJwt == null) {
+            liferay.warn("ID Token not found");
+            return "---x---"; //unknown value
+        }
+       return idTokenJwt.getJWTClaimsSet().getSubject();
+    }
+
+    // Security check !
+    // Itmse best practice to validate the subject (https://belgianmobileid.github.io/slate/login.html#3-7-obtaining-user-attributes-or-claims)
+    public boolean matchingSubjects(String subject) throws ParseException {
+        return subject != null && subject.equals(this.getSubject());
     }
 }

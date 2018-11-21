@@ -1,15 +1,13 @@
 package nl.finalist.liferay.oidc;
 
-import java.util.Map;
-import java.util.UUID;
+import nl.finalist.liferay.oidc.providers.UserInfoProvider;
+import org.apache.commons.lang3.StringUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-
-import org.apache.commons.lang3.StringUtils;
-
-import nl.finalist.liferay.oidc.providers.UserInfoProvider;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * AutoLogin for OpenID Connect 1.0
@@ -27,44 +25,44 @@ public class LibAutoLogin {
     }
 
     public String[] doLogin(HttpServletRequest request, HttpServletResponse response) {
-    	String[] userResponse = null;
+        String[] userResponse = null;
 
         long companyId = liferay.getCompanyId(request);
 
         OIDCConfiguration oidcConfiguration = liferay.getOIDCConfiguration(companyId);
 
         if (oidcConfiguration.isEnabled()) {
-        	HttpSession session = request.getSession();
+            HttpSession session = request.getSession();
             Map<String, String> userInfo = (Map<String, String>) session.getAttribute(
                     LibFilter.OPENID_CONNECT_SESSION_ATTR);
 
             UserInfoProvider provider = ProviderFactory.getOpenIdProvider(oidcConfiguration.providerType());
 
-             if (userInfo == null) {
-                 // Normal flow, apparently no current OpenID conversation
-                 liferay.trace("No current OpenID Connect conversation, no auto login");
-             } else if (StringUtils.isBlank(provider.getEmail(userInfo))) {
-                 liferay.error("Unexpected: OpenID Connect UserInfo does not contain email field. " +
-                         "Cannot correlate to Liferay user. UserInfo: " + userInfo);
-             } else {
-                 liferay.trace("Found OpenID Connect session attribute, userinfo: " + userInfo);
-            	 String emailAddress = provider.getEmail(userInfo);
-                 String givenName = provider.getFirstName(userInfo);
-                 String familyName = provider.getLastName(userInfo);
-                 //String gender = provider.getGender(userInfo);
-                 //String subject = provider.getSubject(userInfo);
-                 //String locale = provider.getLocale(userInfo);
-                 //String birthdate = provider.getBirthdate(userInfo);
+            if (userInfo == null) {
+                // Normal flow, apparently no current OpenID conversation
+                liferay.trace("No current OpenID Connect conversation, no auto login");
+            } else if (StringUtils.isBlank(provider.getEmail(userInfo))) {
+                liferay.error("Unexpected: OpenID Connect UserInfo does not contain email field. " +
+                        "Cannot correlate to Liferay user. UserInfo: " + userInfo);
+            } else {
+                liferay.trace("Found OpenID Connect session attribute");
+                String emailAddress = provider.getEmail(userInfo);
+                String givenName = provider.getFirstName(userInfo);
+                String familyName = provider.getLastName(userInfo);
+                //String gender = provider.getGender(userInfo);
+                //String subject = provider.getSubject(userInfo);
+                //String locale = provider.getLocale(userInfo);
+                //String birthdate = provider.getBirthdate(userInfo);
 
-                 String userId = liferay.createOrUpdateUser(companyId, emailAddress, givenName, familyName);
-                 liferay.trace("Returning credentials for userId " + userId + ", email: " + emailAddress);
-                 
-                 userResponse = new String[]{userId, UUID.randomUUID().toString(), "false"};
-             }
+                String userId = liferay.createOrUpdateUser(companyId, emailAddress, givenName, familyName);
+                liferay.trace("Returning credentials for userId " + userId);
+
+                userResponse = new String[]{userId, UUID.randomUUID().toString(), "false"};
+            }
         } else {
             liferay.trace("OpenIDConnectAutoLogin not enabled for this virtual instance. Will skip it.");
         }
-        
+
         return userResponse;
     }
 }

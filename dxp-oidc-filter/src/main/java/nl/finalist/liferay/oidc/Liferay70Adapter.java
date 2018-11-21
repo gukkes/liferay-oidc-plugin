@@ -25,23 +25,31 @@ import nl.finalist.liferay.oidc.configuration.OpenIDConnectOCDConfiguration;
 public class Liferay70Adapter implements LiferayAdapter {
 
     private static final Log LOG = LogFactoryUtil.getLog(Liferay70Adapter.class);
+    private final OIDCConfiguration configuration;
 
     private UserLocalService userLocalService;
-    private ConfigurationProvider configurationProvider;
+    //private ConfigurationProvider configurationProvider;
 
 
-    public Liferay70Adapter(UserLocalService userLocalService, ConfigurationProvider
+    /*public Liferay70Adapter(UserLocalService userLocalService, ConfigurationProvider
         configurationProvider) {
 		this.userLocalService = userLocalService;
         this.configurationProvider = configurationProvider;
+    }*/
+
+    public Liferay70Adapter(UserLocalService userLocalService, OIDCConfiguration configuration) {
+        this.userLocalService = userLocalService;
+        this.configuration = configuration;
     }
 
     public OIDCConfiguration getOIDCConfiguration(long companyId) {
-        try {
-            return configurationProvider.getCompanyConfiguration(OpenIDConnectOCDConfiguration.class, companyId);
+        return configuration;
+       /* try {
+            return
+                    configuration.configurationProvider.getCompanyConfiguration(OpenIDConnectOCDConfiguration.class, companyId);
         } catch (ConfigurationException e) {
             throw new SystemException(e);
-        }
+        }*/
     }
     
     @Override

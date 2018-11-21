@@ -1,5 +1,6 @@
 package nl.finalist.liferay.oidc;
 
+import com.liferay.portal.configuration.metatype.bnd.util.ConfigurableUtil;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.module.configuration.ConfigurationProvider;
@@ -18,6 +19,8 @@ import org.osgi.service.component.annotations.Reference;
 
 import nl.finalist.liferay.oidc.LibFilter.FilterResult;
 import nl.finalist.liferay.oidc.configuration.OpenIDConnectOCDConfiguration;
+
+import java.util.Map;
 
 @Component(
 		immediate = true,
@@ -42,18 +45,18 @@ public class OpenIDConnectFilter extends BaseFilter {
 
     private volatile OpenIDConnectOCDConfiguration _configuration;
 
-    private ConfigurationProvider _configurationProvider;
+    //private ConfigurationProvider _configurationProvider;
 
-    @Reference
-    protected void setConfigurationProvider(ConfigurationProvider configurationProvider) {
-        _configurationProvider = configurationProvider;
-    }
+    //@Reference
+    //protected void setConfigurationProvider(ConfigurationProvider configurationProvider) {
+    //    _configurationProvider = configurationProvider;
+    //}
 
-    @Activate
+    /*@Activate
     @Modified
     protected void activate() {
         libFilter = new LibFilter(new Liferay70Adapter(_userLocalService, _configurationProvider));
-    }
+    }*/
 
     @Override
     protected Log getLog() {
@@ -72,5 +75,10 @@ public class OpenIDConnectFilter extends BaseFilter {
         }
     }
 
-
+    @Activate
+    @Modified
+    protected void activate(Map<String, Object> properties) {
+        _configuration = ConfigurableUtil.createConfigurable(OpenIDConnectOCDConfiguration.class, properties);
+        libFilter = new LibFilter(new Liferay70Adapter(_userLocalService, _configuration));
+    }
 }
